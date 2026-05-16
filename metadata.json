@@ -1,0 +1,5 @@
+{
+  "name": "Campus Virtual Netflix-Style",
+  "description": "A high-fidelity educational platform featuring a Netflix-inspired UI, role-based access (Student/Admin), course progress tracking, and interactive video learning.",
+  "requestFramePermissions": []
+}

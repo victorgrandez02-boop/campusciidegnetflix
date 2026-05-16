@@ -1,0 +1,133 @@
+# ============================================
+# Docker Compose — Campus Virtual CIIDEG
+# Configuración para PRODUCCIÓN con seguridad
+# ============================================
+
+services:
+  # ============================================
+  # Base de Datos PostgreSQL
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: campus_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # En producción NO exponer el puerto al host público
+    # Solo se accede internamente por la red de Docker
+    expose:
+      - "5432"
+    # Para desarrollo local descomentar:
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database_postgresql.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - campus_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================
+  # API PHP (Apache + PHP + PostgreSQL)
+  # ============================================
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    container_name: campus_api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8080}:80"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+      DB_TYPE: ${DB_TYPE:-postgresql}
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DB_NAME: ${POSTGRES_DB}
+      PG_USERNAME: ${POSTGRES_USER}
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./api:/var/www/html/api:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - campus_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/courses.php"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================
+  # Frontend React (Nginx)
+  # ============================================
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    container_name: campus_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - campus_network
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================
+  # pgAdmin — SOLO para development/staging
+  # En producción comentar o eliminar este servicio
+  # ============================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: campus_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - campus_network
+    profiles:
+      - devtools   # Solo se levanta con: docker compose --profile devtools up
+
+# ============================================
+# Volúmenes persistentes
+# ============================================
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# ============================================
+# Red interna (aislada del host)
+# ============================================
+networks:
+  campus_network:
+    driver: bridge
+    internal: false   # cambiar a true si se usa un reverse proxy externo (Traefik/Nginx externo)

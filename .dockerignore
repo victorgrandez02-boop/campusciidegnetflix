@@ -1,0 +1,13 @@
+# ============================================
+# Docker Ignore
+# ============================================
+node_modules
+npm-debug.log
+.git
+*.md
+.env.local
+.vscode
+.idea
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,24 @@
+# ============================================
+# .htaccess — API PHP Campus Virtual CIIDEG
+# ============================================
+
+# Habilitar el motor de reescritura
+Options -Indexes
+RewriteEngine On
+
+# Permitir acceso a archivos PHP directamente
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Bloquear acceso a archivos que no son PHP
+<FilesMatch "\.(sql|env|json|log|md|lock)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Headers de seguridad adicionales
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Options "DENY"
+
+# Asegurar que las respuestas PHP se sirvan como JSON
+# (cada endpoint lo establece explícitamente via config.php)

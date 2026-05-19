@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS courses (
     id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(150) NOT NULL,
     description TEXT,
-    cover_image VARCHAR(255),
-    poster_image VARCHAR(255),
+    cover_image LONGTEXT,
+    poster_image LONGTEXT,
     price DECIMAL(10, 2) DEFAULT 0.00,
     duration VARCHAR(50),
     level ENUM('Principiante', 'Intermedio', 'Avanzado'),
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS materials (
     lesson_id INT NOT NULL,
     title VARCHAR(150) NOT NULL,
     type ENUM('PDF', 'LINK', 'DRIVE') DEFAULT 'LINK',
-    url VARCHAR(255) NOT NULL,
+    url LONGTEXT NOT NULL,
     FOREIGN KEY (lesson_id) REFERENCES lessons(id) ON DELETE CASCADE
 );
 
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS lesson_progress (
 
 -- Initial users. Replace password_hash values before deploying.
 INSERT INTO users (full_name, email, phone, password_hash, role, avatar) VALUES
-('Admin Principal', 'admin@ciideg.edu.pe', '936220771', '$2b$10$BRgx9bFKDFIuLoP/aLFFFORdU6nXRqZM0CqgX0vuzK90dKCTV.AYu', 'ADMIN', 'https://ui-avatars.com/api/?name=Admin+Principal&background=random'),
-('Gestor CIIDEG', 'gestor@ciideg.edu.pe', '936220771', '$2b$10$Ogxgr/mai4ax35iBB81Fo.esauKzyNZcLF71SRn3qClGp5oxrpb.C', 'GESTOR', 'https://ui-avatars.com/api/?name=Gestor+CIIDEG&background=random'),
-('Alumno CIIDEG', 'alumno@ciideg.edu.pe', '900000000', '$2b$10$gqNrO6KU6xsmtSsaJFOcJeOxvHnPICmRYPNzCtIylMoKrohRcEYEO', 'ALUMNO', 'https://ui-avatars.com/api/?name=Alumno+CIIDEG&background=random'),
-('Docente CIIDEG', 'docente@ciideg.edu.pe', '900000001', '$2b$10$kCBXI4Lu0J3I2jzjQynji.3QvneKlb/RbYdMGjBua/WBX3WlsbnPW', 'DOCENTE', 'https://ui-avatars.com/api/?name=Docente+CIIDEG&background=random');
+('Admin Principal', 'admin@ciideg.edu.pe', '936220771', '$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K', 'ADMIN', 'https://ui-avatars.com/api/?name=Admin+Principal&background=random'),
+('Gestor CIIDEG', 'gestor@ciideg.edu.pe', '936220771', '$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K', 'GESTOR', 'https://ui-avatars.com/api/?name=Gestor+CIIDEG&background=random'),
+('Alumno CIIDEG', 'alumno@ciideg.edu.pe', '900000000', '$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K', 'ALUMNO', 'https://ui-avatars.com/api/?name=Alumno+CIIDEG&background=random'),
+('Docente CIIDEG', 'docente@ciideg.edu.pe', '900000001', '$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K', 'DOCENTE', 'https://ui-avatars.com/api/?name=Docente+CIIDEG&background=random');

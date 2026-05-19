@@ -4,6 +4,7 @@
  * Campus Virtual CIIDEG
  */
 require_once 'config.php';
+require_once 'auth.php';
 
 // config.php ya maneja OPTIONS (preflight), CORS y Content-Type: application/json
 
@@ -58,8 +59,12 @@ try {
 
 if (!$user || !password_verify($data->password, $user['password_hash'])) {
     $rate['failures'] = ($rate['failures'] ?? 0) + 1;
-    if ($rate['failures'] > 5) {
+    if ($rate['failures'] >= 5) {
         $rate['blocked_until'] = time() + (15 * 60);
+        file_put_contents($rateFile, json_encode($rate));
+        http_response_code(429);
+        echo json_encode(["success" => false, "message" => "Demasiados intentos fallidos. Intenta nuevamente en 15 minutos."]);
+        exit();
     }
     file_put_contents($rateFile, json_encode($rate));
     http_response_code(401);
@@ -76,6 +81,7 @@ http_response_code(200);
 echo json_encode([
     "success" => true,
     "message" => "Login successful",
+    "token" => issue_token($user),
     "user" => [
         "id"                 => (string)$user['id'],
         "fullName"           => $user['full_name'],

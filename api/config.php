@@ -28,9 +28,13 @@ $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (!empty($allowedOrigin) && ($allowedOrigin === '*' || $requestOrigin === $allowedOrigin)) {
     header("Access-Control-Allow-Origin: $requestOrigin");
     header("Vary: Origin");
-} elseif (empty($allowedOrigin)) {
+} elseif (empty($allowedOrigin) && $isDev) {
     // Sin restricción de origen configurada — permitir cualquiera (SOLO para dev local sin Docker)
     header("Access-Control-Allow-Origin: *");
+} elseif (empty($allowedOrigin)) {
+    http_response_code(503);
+    echo json_encode(['success' => false, 'message' => 'Servicio no disponible. Falta configurar CORS_ALLOWED_ORIGIN.']);
+    exit();
 } else {
     // Origen no permitido — no enviamos el header ACAO
     // El navegador bloqueará la respuesta automáticamente

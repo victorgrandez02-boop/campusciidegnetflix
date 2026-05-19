@@ -13,6 +13,7 @@ import Navbar from "./components/Navbar";
 import Player from "./components/Player";
 import { ToastProvider, useToast } from "./components/ToastContext";
 import { api } from "./services/api";
+import { resolveCourseIdFromHash } from "./utils/courseLinks";
 import {
   Certificate,
   Course,
@@ -138,6 +139,7 @@ const CampusApp: React.FC = () => {
   const loadCourses = async () => {
     const data = await api.getCourses();
     setCourses(data);
+    return data;
   };
 
   const loadUserContext = async (
@@ -178,7 +180,7 @@ const CampusApp: React.FC = () => {
   };
 
   const restoreSession = async () => {
-    const [sessionUser, settingsData] = await Promise.all([
+    const [sessionUser, settingsData, coursesData] = await Promise.all([
       api.getCurrentSessionUser(),
       api.getSystemSettings(),
       loadCourses(),
@@ -195,9 +197,8 @@ const CampusApp: React.FC = () => {
       else if (sessionUser.role === UserRole.GESTOR) view = View.GESTOR;
 
       // Handle hash routing override even if logged in
-      const hash = window.location.hash;
-      if (hash.startsWith("#curso-")) {
-        const courseId = hash.replace("#curso-", "");
+      const courseId = resolveCourseIdFromHash(window.location.hash, coursesData);
+      if (courseId) {
         setLandingCourseId(courseId);
         view = View.COURSE_LANDING;
       }
@@ -206,9 +207,8 @@ const CampusApp: React.FC = () => {
       await loadUserContext(sessionUser);
     } else {
       // Check hash routing if not logged in
-      const hash = window.location.hash;
-      if (hash.startsWith("#curso-")) {
-        const courseId = hash.replace("#curso-", "");
+      const courseId = resolveCourseIdFromHash(window.location.hash, coursesData);
+      if (courseId) {
         setLandingCourseId(courseId);
         setCurrentView(View.COURSE_LANDING);
       }
@@ -220,7 +220,7 @@ const CampusApp: React.FC = () => {
       try {
         await restoreSession();
       } catch (error) {
-        console.error(error);
+        void error;
         addToast("No se pudo restaurar la sesion previa.", "warning");
       } finally {
         setIsBooting(false);

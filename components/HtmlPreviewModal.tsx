@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Code2, ExternalLink, X } from 'lucide-react';
+import { buildSafeHtmlDocument, looksLikeRemoteHtml, sanitizeHtml } from '../utils/htmlSanitizer';
 
 interface HtmlPreviewModalProps {
   title: string;
@@ -15,9 +16,11 @@ interface HtmlPreviewModalProps {
  *    en un iframe sandboxed para prevenir XSS.
  */
 const HtmlPreviewModal: React.FC<HtmlPreviewModalProps> = ({ title, htmlContent, onClose }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
-  const isUrl = /^https?:\/\//i.test(htmlContent.trim());
+  const trimmedContent = htmlContent.trim();
+  const isUrl = looksLikeRemoteHtml(trimmedContent);
+  const sanitizedHtml = sanitizeHtml(trimmedContent);
+  const safeDocument = buildSafeHtmlDocument(sanitizedHtml);
 
   // Cerrar con Escape
   useEffect(() => {
@@ -27,18 +30,6 @@ const HtmlPreviewModal: React.FC<HtmlPreviewModalProps> = ({ title, htmlContent,
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
-
-  // Inyectar HTML crudo en el iframe cuando no es URL
-  useEffect(() => {
-    if (!isUrl && activeTab === 'preview' && iframeRef.current) {
-      const doc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
-      if (doc) {
-        doc.open();
-        doc.write(htmlContent);
-        doc.close();
-      }
-    }
-  }, [isUrl, htmlContent, activeTab]);
 
   return (
     <div
@@ -90,7 +81,7 @@ const HtmlPreviewModal: React.FC<HtmlPreviewModalProps> = ({ title, htmlContent,
             {/* Abrir en nueva pestaña (solo para URL) */}
             {isUrl && (
               <a
-                href={htmlContent}
+                href={trimmedContent}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10"
@@ -116,16 +107,17 @@ const HtmlPreviewModal: React.FC<HtmlPreviewModalProps> = ({ title, htmlContent,
             /* Visor de código */
             <div className="h-full overflow-auto bg-[#0A0F1A] p-6">
               <pre className="text-sm leading-7 text-green-300">
-                <code>{htmlContent}</code>
+                <code>{sanitizedHtml}</code>
               </pre>
             </div>
           ) : (
             /* iframe de preview */
             <iframe
-              ref={isUrl ? undefined : iframeRef}
               title={title}
-              src={isUrl ? htmlContent : undefined}
-              sandbox="allow-scripts allow-same-origin"
+              src={isUrl ? trimmedContent : undefined}
+              srcDoc={isUrl ? undefined : safeDocument}
+              sandbox=""
+              referrerPolicy="no-referrer"
               className="h-full w-full border-0 bg-white"
             />
           )}

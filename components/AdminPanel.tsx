@@ -133,8 +133,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExit, onLogout }
   const handleResetStudentPassword = async (userId: string) => {
     setSaving(true);
     try {
-      await api.resetStudentPassword(userId);
+      const temporaryPassword = await api.resetStudentPassword(userId);
       await loadData();
+      alert(`Clave temporal generada: ${temporaryPassword}`);
     } finally {
       setSaving(false);
     }
@@ -154,8 +155,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExit, onLogout }
   const handleSupportReset = async (requestId: string) => {
     setSaving(true);
     try {
-      await api.resetSupportRequestPassword(requestId, currentUser.id);
+      const temporaryPassword = await api.resetSupportRequestPassword(requestId, currentUser.id);
       await loadData();
+      alert(`Clave temporal generada: ${temporaryPassword}`);
     } finally {
       setSaving(false);
     }
@@ -580,7 +582,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExit, onLogout }
                               onClick={() => handleResetStudentPassword(user.id)}
                               disabled={saving}
                               className="ml-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-amber-100 transition hover:bg-amber-500/20 disabled:opacity-40"
-                              title="Resetear a Temporal123"
+                              title="Generar clave temporal"
                             >
                               <KeyRound className="h-4 w-4" />
                             </button>
@@ -764,7 +766,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExit, onLogout }
                             disabled={saving}
                             className="rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-black transition hover:bg-amber-400 disabled:opacity-60"
                           >
-                            Resetear a Temporal123
+                            Generar clave temporal
                           </button>
                         )}
                       </td>

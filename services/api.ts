@@ -17,11 +17,14 @@ import {
   User,
   UserRole,
 } from '../types';
+import { looksLikeRemoteHtml, sanitizeHtml } from '../utils/htmlSanitizer';
+import { buildCourseHash } from '../utils/courseLinks';
 
 const STORAGE_KEY = 'ciideg_campus_store_v1';
 const SESSION_KEY = 'ciideg_campus_session_v1';
+const TOKEN_KEY = 'ciideg_campus_token_v1';
 // Incrementar este número fuerza re-seed completo en todos los navegadores clientes.
-const STORE_VERSION = 7;
+const STORE_VERSION = 9;
 const LATENCY_MS = 120;
 const RATE_LIMIT_KEY = 'ciideg_campus_rate_limits_v1';
 const MAX_AUTH_FAILURES = 5;
@@ -66,6 +69,11 @@ const getClientRateId = () => 'browser-client';
 const remoteApiEnabled =
   Boolean(import.meta.env?.PROD) && import.meta.env?.VITE_USE_LOCAL_STORE !== 'true';
 const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api';
+const DEFAULT_DEMO_PASSWORD = '@26Gemses1';
+const demoPassword = (key: string) =>
+  import.meta.env?.DEV
+    ? (import.meta.env?.[key] as string | undefined) || DEFAULT_DEMO_PASSWORD
+    : makeId('disabled-password');
 
 const makeId = (prefix: string) => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -74,6 +82,8 @@ const makeId = (prefix: string) => {
 
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
 };
+
+const makeTemporaryPassword = () => `Tmp-${makeId('key').replace(/[^a-zA-Z0-9]/g, '').slice(0, 12)}!`;
 
 const makeAvatar = (name: string, background = '0D1117') =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${background.replace('#', '')}&color=ffffff&bold=true`;
@@ -105,11 +115,13 @@ const registerAuthFailure = () => {
   const limits = readRateLimits();
   const key = getClientRateId();
   const failures = (limits[key]?.failures || 0) + 1;
+  const blocked = failures >= MAX_AUTH_FAILURES;
   limits[key] = {
     failures,
-    blockedUntil: failures > MAX_AUTH_FAILURES ? Date.now() + AUTH_BLOCK_MS : undefined,
+    blockedUntil: blocked ? Date.now() + AUTH_BLOCK_MS : undefined,
   };
   writeRateLimits(limits);
+  return blocked;
 };
 
 const clearAuthFailures = () => {
@@ -144,6 +156,20 @@ const getSessionUserId = () => {
 
   return memorySession;
 };
+
+const setAuthToken = (token: string | null) => {
+  if (!hasWindow()) {
+    return;
+  }
+
+  if (token) {
+    window.localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    window.localStorage.removeItem(TOKEN_KEY);
+  }
+};
+
+const getAuthToken = () => (hasWindow() ? window.localStorage.getItem(TOKEN_KEY) : null);
 
 const readRawStore = (): CampusStore | null => {
   if (hasWindow()) {
@@ -197,21 +223,49 @@ const getCourseLessons = (course: Course) => course.modules.flatMap((module) => 
 const apiUrl = (path: string) => `${API_BASE_URL.replace(/\/$/, '')}/${path}`;
 
 const requestJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const token = getAuthToken();
   const response = await fetch(apiUrl(path), {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers || {}),
     },
   });
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload: any = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html') || text.trim().startsWith('<')) {
+        throw new Error(
+          response.status === 413
+            ? 'Las imagenes son demasiado pesadas. Usa imagenes mas livianas o vuelve a intentar.'
+            : 'El servidor devolvio una respuesta no valida. Intenta nuevamente.',
+        );
+      }
+      throw new Error('El servidor devolvio una respuesta no valida. Intenta nuevamente.');
+    }
+  }
   if (!response.ok) {
     throw new Error(payload?.message || payload?.error || 'No se pudo completar la operacion.');
   }
 
   return payload as T;
+};
+
+const sanitizeMaterialPayload = <T extends { type: MaterialType; url: string }>(material: T): T => {
+  if (material.type !== MaterialType.HTML || looksLikeRemoteHtml(material.url)) {
+    return material;
+  }
+
+  return {
+    ...material,
+    url: sanitizeHtml(material.url),
+  };
 };
 
 const toBool = (value: unknown) =>
@@ -476,7 +530,7 @@ const seedStore = (): CampusStore => {
         fullName: 'Admin Principal',
         email: 'admin@ciideg.edu.pe',
         phone: '936220771',
-        password: 'Admin2026!',
+        password: demoPassword('VITE_DEMO_ADMIN_PASSWORD'),
         role: UserRole.ADMIN,
         avatar: 'https://ui-avatars.com/api/?name=Admin+Principal&background=random',
         createdAt: now(),
@@ -487,7 +541,7 @@ const seedStore = (): CampusStore => {
         fullName: 'Gestor CIIDEG',
         email: 'gestor@ciideg.edu.pe',
         phone: '936220771',
-        password: 'Gestor2026!',
+        password: demoPassword('VITE_DEMO_GESTOR_PASSWORD'),
         role: UserRole.GESTOR,
         avatar: 'https://ui-avatars.com/api/?name=Gestor+CIIDEG&background=random',
         createdAt: now(),
@@ -498,7 +552,7 @@ const seedStore = (): CampusStore => {
         fullName: 'Docente CIIDEG',
         email: 'docente@ciideg.edu.pe',
         phone: '936220771',
-        password: 'Teacher2026!',
+        password: demoPassword('VITE_DEMO_DOCENTE_PASSWORD'),
         role: UserRole.DOCENTE,
         avatar: 'https://ui-avatars.com/api/?name=Docente+CIIDEG&background=random',
         createdAt: now(),
@@ -509,7 +563,7 @@ const seedStore = (): CampusStore => {
         fullName: 'Alumno CIIDEG',
         email: 'alumno@ciideg.edu.pe',
         phone: '936220771',
-        password: 'Student2026!',
+        password: demoPassword('VITE_DEMO_STUDENT_PASSWORD'),
         role: UserRole.ALUMNO,
         avatar: 'https://ui-avatars.com/api/?name=Alumno+CIIDEG&background=random',
         createdAt: now(),
@@ -635,7 +689,7 @@ const normalizeModules = (courseId: string, modules: Module[]): Module[] =>
           moduleId,
           sortOrder: lessonIndex + 1,
           materials: (lesson.materials ?? []).map((material) => ({
-            ...material,
+            ...sanitizeMaterialPayload(material),
             id: material.id || makeId('material'),
             lessonId,
             updatedAt: now(),
@@ -663,13 +717,14 @@ export const api = {
     assertAuthNotBlocked();
     if (remoteApiEnabled) {
       try {
-        const response = await requestJson<{ user: any }>('login.php', {
+        const response = await requestJson<{ user: any; token?: string }>('login.php', {
           method: 'POST',
           body: JSON.stringify({ email, password }),
         });
         const user = mapRemoteUser(response.user);
         clearAuthFailures();
         setSessionUserId(user.id);
+        setAuthToken(response.token ?? null);
         return user;
       } catch (error) {
         registerAuthFailure();
@@ -685,7 +740,9 @@ export const api = {
     );
 
     if (!user) {
-      registerAuthFailure();
+      if (registerAuthFailure()) {
+        throw new Error('Demasiados intentos fallidos. Intenta nuevamente en 15 minutos.');
+      }
       throw new Error('Correo o contrasena invalidos.');
     }
 
@@ -711,17 +768,21 @@ export const api = {
     }
 
     if (!userData.formStartedAt || Date.now() - userData.formStartedAt < 4000) {
-      registerAuthFailure();
+      if (registerAuthFailure()) {
+        throw new Error('Demasiados intentos fallidos. Intenta nuevamente en 15 minutos.');
+      }
       throw new Error('El registro fue enviado demasiado rapido. Intenta nuevamente.');
     }
 
     if (!isValidPeruPhone(userData.phone)) {
-      registerAuthFailure();
+      if (registerAuthFailure()) {
+        throw new Error('Demasiados intentos fallidos. Intenta nuevamente en 15 minutos.');
+      }
       throw new Error('Ingresa un telefono peruano valido de 9 digitos.');
     }
 
     if (remoteApiEnabled) {
-      const response = await requestJson<{ user: any }>('register.php', {
+      const response = await requestJson<{ user: any; token?: string }>('register.php', {
         method: 'POST',
         body: JSON.stringify({
           full_name: userData.fullName,
@@ -735,6 +796,7 @@ export const api = {
       const user = mapRemoteUser(response.user);
       clearAuthFailures();
       setSessionUserId(user.id);
+      setAuthToken(response.token ?? null);
       return user;
     }
 
@@ -803,8 +865,13 @@ export const api = {
     }
 
     if (remoteApiEnabled) {
-      const users = await api.getUsers();
-      return users.find((item) => item.id === sessionUserId) ?? null;
+      try {
+        return mapRemoteUser(await requestJson<any>('users.php?action=me'));
+      } catch {
+        setSessionUserId(null);
+        setAuthToken(null);
+        return null;
+      }
     }
 
     const store = readStore();
@@ -815,6 +882,7 @@ export const api = {
   logout: async (): Promise<void> => {
     await wait(40);
     setSessionUserId(null);
+    setAuthToken(null);
   },
 
   getUsers: async (): Promise<User[]> => {
@@ -1011,14 +1079,14 @@ export const api = {
     }
   },
 
-  resetStudentPassword: async (userId: string, temporaryPassword = 'Temporal123'): Promise<void> => {
+  resetStudentPassword: async (userId: string, temporaryPassword = makeTemporaryPassword()): Promise<string> => {
     await wait();
     if (remoteApiEnabled) {
       await requestJson('users.php?action=reset-password', {
         method: 'POST',
         body: JSON.stringify({ user_id: userId, temporary_password: temporaryPassword }),
       });
-      return;
+      return temporaryPassword;
     }
 
     updateStore((draft) => {
@@ -1033,10 +1101,11 @@ export const api = {
         draft,
         user.id,
         'Contrasena restablecida',
-        'Ingresa con la clave temporal y cambia tu contrasena al acceder.',
+        `Ingresa con la clave temporal ${temporaryPassword} y cambia tu contrasena al acceder.`,
         'warning',
       );
     });
+    return temporaryPassword;
   },
 
   changePassword: async (userId: string, currentPassword: string, newPassword: string): Promise<User> => {
@@ -1476,6 +1545,20 @@ export const api = {
     courseId: string,
   ): Promise<LessonProgress[]> => {
     await wait(50);
+    if (remoteApiEnabled) {
+      const progress = await requestJson<any[]>(
+        `progress.php?user_id=${encodeURIComponent(userId)}&course_id=${encodeURIComponent(courseId)}`,
+      );
+      return progress.map((item) => ({
+        id: String(item.id),
+        userId: String(item.user_id ?? item.userId),
+        lessonId: String(item.lesson_id ?? item.lessonId),
+        isCompleted: toBool(item.is_completed ?? item.isCompleted),
+        watchedSeconds: Number(item.watched_seconds ?? item.watchedSeconds ?? 0),
+        lastWatchedAt: item.last_watched_at ?? item.lastWatchedAt,
+      }));
+    }
+
     const course = readStore().courses.find((item) => item.id === courseId);
     if (!course) {
       return [];
@@ -1494,6 +1577,18 @@ export const api = {
     watchedSeconds = 0,
   ): Promise<void> => {
     await wait(60);
+    if (remoteApiEnabled) {
+      await requestJson('progress.php', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: userId,
+          lesson_id: lessonId,
+          is_completed: isCompleted,
+          watched_seconds: watchedSeconds,
+        }),
+      });
+      return;
+    }
 
     updateStore((draft) => {
       const existing = draft.lessonProgress.find(
@@ -1519,6 +1614,27 @@ export const api = {
 
   getTeacherProfile: async (userId: string): Promise<TeacherProfile | null> => {
     await wait();
+    if (remoteApiEnabled) {
+      try {
+        const response = await requestJson<any>(`teacher_profiles.php?user_id=${encodeURIComponent(userId)}`);
+        const raw = response.profile ?? response;
+        return {
+          id: String(raw.id ?? raw.user_id ?? userId),
+          userId: String(raw.user_id ?? userId),
+          bio: raw.bio ?? '',
+          specialization: raw.specialization ?? '',
+          experience: raw.experience ?? '',
+          socialLinks: {
+            linkedin: raw.linkedin_url ?? '',
+            twitter: raw.twitter_url ?? '',
+            website: raw.website_url ?? '',
+          },
+        };
+      } catch {
+        return null;
+      }
+    }
+
     const profile = readStore().teacherProfiles.find((item) => item.userId === userId);
     return profile ? clone(profile) : null;
   },
@@ -1537,6 +1653,16 @@ export const api = {
     },
   ): Promise<void> => {
     await wait();
+    if (remoteApiEnabled) {
+      await requestJson('teacher_profiles.php', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: userId,
+          ...profile,
+        }),
+      });
+      return;
+    }
 
     updateStore((draft) => {
       const user = draft.users.find((item) => item.id === userId);
@@ -1593,7 +1719,7 @@ export const api = {
             lessonId,
             title: material.title,
             type: material.type,
-            url: material.url,
+            url: sanitizeMaterialPayload(material).url,
             createdAt: now(),
             updatedAt: now(),
           };
@@ -1932,14 +2058,15 @@ export const api = {
     return [...readStore().supportRequests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
-  resetSupportRequestPassword: async (requestId: string, attendedBy: string): Promise<void> => {
+  resetSupportRequestPassword: async (requestId: string, attendedBy: string): Promise<string> => {
     await wait();
+    const temporaryPassword = makeTemporaryPassword();
     if (remoteApiEnabled) {
-      await requestJson('support_requests.php?action=reset-temporary', {
+      const response = await requestJson<{ temporary_password?: string }>('support_requests.php?action=reset-temporary', {
         method: 'POST',
-        body: JSON.stringify({ request_id: requestId, attended_by: attendedBy }),
+        body: JSON.stringify({ request_id: requestId, attended_by: attendedBy, temporary_password: temporaryPassword }),
       });
-      return;
+      return response.temporary_password ?? temporaryPassword;
     }
 
     updateStore((draft) => {
@@ -1955,7 +2082,7 @@ export const api = {
       if (!user || user.role !== UserRole.ALUMNO) {
         throw new Error('No se encontro un alumno con ese correo.');
       }
-      user.password = 'Temporal123';
+      user.password = temporaryPassword;
       user.mustChangePassword = true;
       user.updatedAt = now();
       request.userId = user.id;
@@ -1967,10 +2094,11 @@ export const api = {
         draft,
         user.id,
         'Clave temporal asignada',
-        'Tu clave temporal es Temporal123. Cambiala al iniciar sesion.',
+        `Tu clave temporal es ${temporaryPassword}. Cambiala al iniciar sesion.`,
         'warning',
       );
     });
+    return temporaryPassword;
   },
 
   getSystemSettings: async (): Promise<SystemSettings> => {
@@ -1992,9 +2120,9 @@ export const api = {
 
   // ── COURSE PUBLIC LINK ───────────────────────────────────────────────────
 
-  getCoursePublicLink: (courseId: string): string => {
+  getCoursePublicLink: (courseId: string, title?: string): string => {
     const base = typeof window !== 'undefined' ? window.location.origin : '';
-    return `${base}/#curso-${courseId}`;
+    return `${base}/${buildCourseHash(courseId, title)}`;
   },
 
 };

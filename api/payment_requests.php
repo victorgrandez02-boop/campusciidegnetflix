@@ -1,9 +1,11 @@
 <?php
 require_once 'config.php';
+require_once 'auth.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
+    require_roles(['ADMIN', 'GESTOR']);
     $status = $_GET['status'] ?? null;
     if ($status) {
         $stmt = $pdo->prepare("SELECT * FROM payment_requests WHERE status = ? ORDER BY submitted_at DESC");
@@ -20,6 +22,7 @@ if ($method === 'POST') {
     $action = $_GET['action'] ?? 'create';
 
     if ($action === 'approve' || $action === 'reject') {
+        require_roles(['ADMIN', 'GESTOR']);
         $requestId = $data->request_id ?? null;
         $note = trim($data->note ?? '');
         if (!$requestId) {
@@ -63,6 +66,7 @@ if ($method === 'POST') {
     }
 
     $required = ['user_id', 'course_id', 'user_name', 'user_email', 'course_title', 'payment_date'];
+    $auth = require_auth();
     foreach ($required as $field) {
         if (!isset($data->$field) || trim((string)$data->$field) === '') {
             http_response_code(400);
@@ -72,6 +76,11 @@ if ($method === 'POST') {
     }
 
     try {
+        if ((string)$auth['sub'] !== (string)$data->user_id) {
+            http_response_code(403);
+            echo json_encode(["message" => "No tienes permisos para registrar este comprobante."]);
+            exit();
+        }
         $pdo->beginTransaction();
         $stmt = $pdo->prepare("
             INSERT INTO payment_requests

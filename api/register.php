@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'auth.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -27,8 +28,12 @@ if (!empty($data->website ?? '')) {
 $startedAt = intval($data->form_started_at ?? 0);
 if ($startedAt <= 0 || (time() * 1000 - $startedAt) < 4000) {
     $rate['failures'] = ($rate['failures'] ?? 0) + 1;
-    if ($rate['failures'] > 5) {
+    if ($rate['failures'] >= 5) {
         $rate['blocked_until'] = time() + (15 * 60);
+        file_put_contents($rateFile, json_encode($rate));
+        http_response_code(429);
+        echo json_encode(["message" => "Demasiados intentos fallidos. Intenta nuevamente en 15 minutos."]);
+        exit();
     }
     file_put_contents($rateFile, json_encode($rate));
     http_response_code(400);
@@ -69,6 +74,7 @@ try {
     http_response_code(201);
     echo json_encode([
         "message" => "Cuenta creada.",
+        "token" => issue_token($user),
         "user" => [
             "id" => (string)$user['id'],
             "fullName" => $user['full_name'],

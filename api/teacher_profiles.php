@@ -1,5 +1,7 @@
 <?php
 require_once 'config.php';
+require_once 'auth.php';
+require_once 'sanitize.php';
 
 // ============================================
 // API DE PERFILES DE DOCENTES - PostgreSQL
@@ -97,6 +99,7 @@ function getTeacherProfile($pdo) {
 }
 
 function updateTeacherProfile($pdo) {
+    $auth = require_auth();
     $data = json_decode(file_get_contents('php://input'), true);
     $userId = $data['user_id'] ?? null;
     
@@ -146,12 +149,12 @@ function updateTeacherProfile($pdo) {
             ");
             
             $stmt->execute([
-                $data['bio'] ?? null,
-                $data['specialization'] ?? null,
-                $data['experience'] ?? null,
-                $data['socialLinks']['linkedin'] ?? null,
-                $data['socialLinks']['twitter'] ?? null,
-                $data['socialLinks']['website'] ?? null,
+                sanitize_plain_text($data['bio'] ?? null, 5000),
+                sanitize_plain_text($data['specialization'] ?? null, 150),
+                sanitize_plain_text($data['experience'] ?? null, 5000),
+                trim($data['socialLinks']['linkedin'] ?? ''),
+                trim($data['socialLinks']['twitter'] ?? ''),
+                trim($data['socialLinks']['website'] ?? ''),
                 $userId
             ]);
         } else {
@@ -164,12 +167,12 @@ function updateTeacherProfile($pdo) {
             
             $stmt->execute([
                 $userId,
-                $data['bio'] ?? null,
-                $data['specialization'] ?? null,
-                $data['experience'] ?? null,
-                $data['socialLinks']['linkedin'] ?? null,
-                $data['socialLinks']['twitter'] ?? null,
-                $data['socialLinks']['website'] ?? null
+                sanitize_plain_text($data['bio'] ?? null, 5000),
+                sanitize_plain_text($data['specialization'] ?? null, 150),
+                sanitize_plain_text($data['experience'] ?? null, 5000),
+                trim($data['socialLinks']['linkedin'] ?? ''),
+                trim($data['socialLinks']['twitter'] ?? ''),
+                trim($data['socialLinks']['website'] ?? '')
             ]);
         }
         
@@ -180,9 +183,9 @@ function updateTeacherProfile($pdo) {
             WHERE id = ?
         ");
         $userUpdateStmt->execute([
-            $data['bio'] ?? null,
-            $data['specialization'] ?? null,
-            $data['experience'] ?? null,
+            sanitize_plain_text($data['bio'] ?? null, 5000),
+            sanitize_plain_text($data['specialization'] ?? null, 150),
+            sanitize_plain_text($data['experience'] ?? null, 5000),
             $userId
         ]);
         
@@ -192,7 +195,13 @@ function updateTeacherProfile($pdo) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         http_response_code(500);
-        echo json_encode(["success" => false, "message" => "Error: " . $e->getMessage()]);
+        error_log('[Campus TeacherProfile] update error: ' . $e->getMessage());
+        echo json_encode(["success" => false, "message" => "Error al actualizar perfil."]);
     }
 }
 ?>
+    if ((string)$auth['sub'] !== (string)$userId && !in_array($auth['role'], ['ADMIN', 'GESTOR'], true)) {
+        http_response_code(403);
+        echo json_encode(["success" => false, "message" => "No tienes permisos para actualizar este perfil"]);
+        exit();
+    }

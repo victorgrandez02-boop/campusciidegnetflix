@@ -1,9 +1,11 @@
 <?php
 require_once 'config.php';
+require_once 'auth.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
+    require_roles(['ADMIN', 'GESTOR']);
     $stmt = $pdo->query("
         SELECT sr.*, u.full_name AS user_name
         FROM support_requests sr
@@ -19,6 +21,7 @@ if ($method === 'POST') {
     $action = $_GET['action'] ?? 'create';
 
     if ($action === 'reset-temporary') {
+        require_roles(['ADMIN', 'GESTOR']);
         $requestId = $data->request_id ?? null;
         $attendedBy = $data->attended_by ?? null;
         if (!$requestId) {
@@ -42,14 +45,21 @@ if ($method === 'POST') {
             exit();
         }
 
+        $temporary = $data->temporary_password ?? bin2hex(random_bytes(6)) . '!';
+        if (strlen($temporary) < 6) {
+            http_response_code(400);
+            echo json_encode(["message" => "Clave temporal invalida."]);
+            exit();
+        }
+
         $pdo->beginTransaction();
         $reset = $pdo->prepare("UPDATE users SET password_hash = ?, must_change_password = TRUE WHERE id = ? AND role = 'ALUMNO'");
-        $reset->execute([password_hash('Temporal123', PASSWORD_DEFAULT), $request['user_id']]);
+        $reset->execute([password_hash($temporary, PASSWORD_DEFAULT), $request['user_id']]);
         $mark = $pdo->prepare("UPDATE support_requests SET user_id = ?, status = 'attended', attended_at = CURRENT_TIMESTAMP, attended_by = ? WHERE id = ?");
         $mark->execute([$request['user_id'], $attendedBy, $requestId]);
         $pdo->commit();
 
-        echo json_encode(["message" => "Clave temporal asignada."]);
+        echo json_encode(["message" => "Clave temporal asignada.", "temporary_password" => $temporary]);
         exit();
     }
 

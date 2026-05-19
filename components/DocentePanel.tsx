@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Video, FileText, Link as LinkIcon, Save, X, Youtube, Folder, BookOpen, LogOut, KeyRound } from 'lucide-react';
+import { Plus, Edit, Trash2, Video, FileText, Link as LinkIcon, Save, X, Youtube, Folder, BookOpen, LogOut, KeyRound, Code } from 'lucide-react';
 import GestorPanel from './GestorPanel';
 import { Course, User, Material, MaterialType, Module, Lesson, UserRole, SupportRequest, Enrollment, EnrollmentStatus } from '../types';
 import { api } from '../services/api';
+import { looksLikeRemoteHtml, sanitizeHtml } from '../utils/htmlSanitizer';
 
 interface DocentePanelProps {
   currentUser: User;
@@ -89,7 +90,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
         setEnrollments(enrollmentData);
       }
     } catch (error) {
-      console.error('Error loading courses:', error);
+      void error;
     } finally {
       setLoading(false);
     }
@@ -109,8 +110,9 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
   const resetStudent = async (userId: string) => {
     setLoading(true);
     try {
-      await api.resetStudentPassword(userId);
+      const temporaryPassword = await api.resetStudentPassword(userId);
       await refreshGestorData();
+      alert(`Clave temporal generada: ${temporaryPassword}`);
     } finally {
       setLoading(false);
     }
@@ -119,8 +121,9 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
   const resetSupport = async (requestId: string) => {
     setLoading(true);
     try {
-      await api.resetSupportRequestPassword(requestId, currentUser.id);
+      const temporaryPassword = await api.resetSupportRequestPassword(requestId, currentUser.id);
       await refreshGestorData();
+      alert(`Clave temporal generada: ${temporaryPassword}`);
     } finally {
       setLoading(false);
     }
@@ -151,7 +154,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
         });
       }
     } catch (error) {
-      console.log('Profile not found, will create new one');
+      // El perfil se creara al guardar cambios.
     }
   };
 
@@ -170,8 +173,8 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       resetCourseForm();
       alert('Curso creado exitosamente');
     } catch (error) {
-      console.error('Error creating course:', error);
-      alert('Error al crear el curso');
+      const message = error instanceof Error ? error.message : 'Error al crear el curso';
+      alert(message);
     } finally {
       setLoading(false);
     }
@@ -195,8 +198,8 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       resetCourseForm();
       alert('Curso actualizado exitosamente');
     } catch (error) {
-      console.error('Error updating course:', error);
-      alert('Error al actualizar el curso');
+      const message = error instanceof Error ? error.message : 'Error al actualizar el curso';
+      alert(message);
     } finally {
       setLoading(false);
     }
@@ -211,7 +214,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       await loadCourses();
       alert('Curso eliminado exitosamente');
     } catch (error) {
-      console.error('Error deleting course:', error);
+      void error;
       alert('Error al eliminar el curso');
     } finally {
       setLoading(false);
@@ -259,8 +262,8 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
     reader.readAsDataURL(file);
   };
 
-  const shareCourse = async (courseId: string) => {
-    const link = api.getCoursePublicLink(courseId);
+  const shareCourse = async (course: Course) => {
+    const link = api.getCoursePublicLink(course.id, course.title);
     if (navigator.clipboard) {
       await navigator.clipboard.writeText(link);
       alert('Enlace copiado al portapapeles');
@@ -301,7 +304,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       setEditingModule(null);
       alert('Módulo agregado exitosamente');
     } catch (error) {
-      console.error('Error adding module:', error);
+      void error;
       alert('Error al agregar módulo');
     } finally {
       setLoading(false);
@@ -334,18 +337,23 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
   };
 
   const handleAddMaterial = async () => {
-    if (!editingLessonMaterials || !materialForm.title || !materialForm.url) return;
+    if (!editingLessonMaterials || !materialForm.title.trim() || !materialForm.url.trim()) return;
 
     try {
       setLoading(true);
       const course = courses.find(c => c.id === editingLessonMaterials.courseId);
       if (!course) return;
 
+      const materialUrl =
+        materialForm.type === MaterialType.HTML && !looksLikeRemoteHtml(materialForm.url)
+          ? sanitizeHtml(materialForm.url)
+          : materialForm.url.trim();
+
       const newMaterial: Material = {
         id: `material-${Date.now()}`,
-        title: materialForm.title,
+        title: materialForm.title.trim(),
         type: materialForm.type,
-        url: materialForm.url
+        url: materialUrl
       };
 
       const updatedModules = course.modules.map((mod, mIdx) => {
@@ -374,7 +382,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       
       alert('Material agregado exitosamente');
     } catch (error) {
-      console.error('Error adding material:', error);
+      void error;
       alert('Error al agregar material');
     } finally {
       setLoading(false);
@@ -416,7 +424,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       
       alert('Material eliminado exitosamente');
     } catch (error) {
-      console.error('Error removing material:', error);
+      void error;
       alert('Error al eliminar material');
     } finally {
       setLoading(false);
@@ -440,7 +448,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       setShowProfileForm(false);
       alert('Perfil actualizado exitosamente');
     } catch (error) {
-      console.error('Error updating profile:', error);
+      void error;
       alert('Error al actualizar el perfil');
     } finally {
       setLoading(false);
@@ -452,6 +460,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       case MaterialType.YOUTUBE: return <Video size={16} className="text-red-500" />;
       case MaterialType.DRIVE: return <Folder size={16} className="text-blue-500" />;
       case MaterialType.LINK: return <LinkIcon size={16} className="text-sky-400" />;
+      case MaterialType.HTML: return <Code size={16} className="text-sky-300" />;
       default: return <FileText size={16} className="text-gray-500" />;
     }
   };
@@ -461,6 +470,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
       case MaterialType.YOUTUBE: return 'YouTube';
       case MaterialType.DRIVE: return 'Google Drive';
       case MaterialType.LINK: return 'Enlace';
+      case MaterialType.HTML: return 'HTML';
       default: return 'PDF';
     }
   };
@@ -610,7 +620,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
                           className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-black hover:bg-amber-400"
                         >
                           <KeyRound size={14} />
-                          Resetear a Temporal123
+                          Generar clave temporal
                         </button>
                       </td>
                     </tr>
@@ -642,7 +652,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
                         onClick={() => resetSupport(request.id)}
                         className="rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-black hover:bg-amber-400"
                       >
-                        Resetear a Temporal123
+                        Generar clave temporal
                       </button>
                     )}
                   </div>
@@ -985,14 +995,16 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <a
-                                href={material.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sky-400 hover:text-sky-300 text-sm"
-                              >
-                                Abrir
-                              </a>
+                              {material.type !== MaterialType.HTML && (
+                                <a
+                                  href={material.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sky-400 hover:text-sky-300 text-sm"
+                                >
+                                  Abrir
+                                </a>
+                              )}
                               <button
                                 onClick={() => handleRemoveMaterial(material.id)}
                                 className="text-red-500 hover:text-red-400"
@@ -1174,7 +1186,7 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
                           Editar
                         </button>
                         <button
-                          onClick={() => shareCourse(course.id)}
+                          onClick={() => shareCourse(course)}
                           className="flex-1 bg-[#003F6F] hover:bg-[#075B98] text-white py-2 rounded-lg transition flex items-center justify-center gap-2 text-sm"
                         >
                           <LinkIcon size={14} />

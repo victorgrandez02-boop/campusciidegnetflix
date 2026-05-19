@@ -79,8 +79,8 @@ CREATE TABLE courses (
     id SERIAL PRIMARY KEY,
     title VARCHAR(150) NOT NULL,
     description TEXT,
-    cover_image VARCHAR(500),
-    poster_image VARCHAR(500),
+    cover_image TEXT,
+    poster_image TEXT,
     price DECIMAL(10, 2) DEFAULT 0.00,
     duration VARCHAR(50),
     level VARCHAR(20) CHECK (level IN ('Principiante', 'Intermedio', 'Avanzado')),
@@ -151,7 +151,7 @@ CREATE TABLE materials (
     lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
     title VARCHAR(150) NOT NULL,
     type VARCHAR(20) DEFAULT 'LINK' CHECK (type IN ('PDF', 'LINK', 'DRIVE', 'YOUTUBE', 'HTML')),
-    url VARCHAR(500) NOT NULL,
+    url TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -339,13 +339,13 @@ GROUP BY u.id, tp.bio, tp.specialization, tp.experience,
 -- Usuarios iniciales. Reemplaza los password_hash antes de desplegar.
 -- Usa hashes bcrypt propios para cada cuenta provisionada.
 INSERT INTO users (full_name, email, phone, password_hash, role, avatar, bio, specialization, experience) VALUES
-('Admin Principal', 'admin@ciideg.edu.pe', '936220771', '$2b$10$BRgx9bFKDFIuLoP/aLFFFORdU6nXRqZM0CqgX0vuzK90dKCTV.AYu', 'ADMIN',
+('Admin Principal', 'admin@ciideg.edu.pe', '936220771', '$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K', 'ADMIN',
  'https://ui-avatars.com/api/?name=Admin+Principal&background=random', NULL, NULL, NULL),
-('Gestor CIIDEG', 'gestor@ciideg.edu.pe', '936220771', '$2b$10$Ogxgr/mai4ax35iBB81Fo.esauKzyNZcLF71SRn3qClGp5oxrpb.C', 'GESTOR',
+('Gestor CIIDEG', 'gestor@ciideg.edu.pe', '936220771', '$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K', 'GESTOR',
  'https://ui-avatars.com/api/?name=Gestor+CIIDEG&background=random', NULL, NULL, NULL),
-('Alumno CIIDEG', 'alumno@ciideg.edu.pe', '900000000', '$2b$10$gqNrO6KU6xsmtSsaJFOcJeOxvHnPICmRYPNzCtIylMoKrohRcEYEO', 'ALUMNO',
+('Alumno CIIDEG', 'alumno@ciideg.edu.pe', '900000000', '$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K', 'ALUMNO',
  'https://ui-avatars.com/api/?name=Alumno+CIIDEG&background=random', NULL, NULL, NULL),
-('Docente CIIDEG', 'docente@ciideg.edu.pe', '900000001', '$2b$10$kCBXI4Lu0J3I2jzjQynji.3QvneKlb/RbYdMGjBua/WBX3WlsbnPW', 'DOCENTE',
+('Docente CIIDEG', 'docente@ciideg.edu.pe', '900000001', '$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K', 'DOCENTE',
  'https://ui-avatars.com/api/?name=Docente+CIIDEG&background=random',
  'Apasionado por la enseñanza de tecnología con más de 10 años de experiencia en la industria.',
  'Desarrollo Web, Python, Machine Learning',

@@ -1,5 +1,7 @@
 <?php
 require_once 'config.php';
+require_once 'auth.php';
+require_once 'sanitize.php';
 
 // ============================================
 // API DE CURSOS - PostgreSQL
@@ -86,6 +88,7 @@ function getCourses($pdo) {
 }
 
 function createCourse($pdo) {
+    $auth = require_roles(['ADMIN', 'GESTOR', 'DOCENTE']);
     $data = json_decode(file_get_contents('php://input'), true);
     
     if (!isset($data['title']) || !isset($data['instructor'])) {
@@ -95,9 +98,13 @@ function createCourse($pdo) {
     }
     
     try {
-        if (!empty($data['is_featured'])) {
+        $isFeatured = !empty($data['is_featured']) ? 'true' : 'false';
+
+        if ($isFeatured === 'true') {
             $pdo->exec("UPDATE courses SET is_featured = FALSE");
         }
+
+        $instructorId = $auth['role'] === 'DOCENTE' ? $auth['sub'] : ($data['instructor_id'] ?? null);
 
         $stmt = $pdo->prepare("
             INSERT INTO courses (title, description, cover_image, poster_image, price, duration, 
@@ -107,18 +114,18 @@ function createCourse($pdo) {
         ");
         
         $stmt->execute([
-            $data['title'],
-            $data['description'] ?? '',
-            $data['cover_image'] ?? '',
-            $data['poster_image'] ?? '',
+            sanitize_plain_text($data['title'], 150),
+            sanitize_plain_text($data['description'] ?? '', 5000),
+            trim($data['cover_image'] ?? ''),
+            trim($data['poster_image'] ?? ''),
             $data['price'] ?? 0,
-            $data['duration'] ?? '',
+            sanitize_plain_text($data['duration'] ?? '', 50),
             $data['level'] ?? 'Principiante',
-            $data['category'] ?? '',
-            $data['instructor'] ?? '',
-            $data['instructor_id'] ?? null,
+            sanitize_plain_text($data['category'] ?? '', 50),
+            sanitize_plain_text($data['instructor'] ?? '', 100),
+            $instructorId,
             $data['rating'] ?? 0,
-            $data['is_featured'] ?? false
+            $isFeatured
         ]);
         
         $courseId = $stmt->fetchColumn();
@@ -131,11 +138,13 @@ function createCourse($pdo) {
         
     } catch (PDOException $e) {
         http_response_code(500);
-        echo json_encode(["success" => false, "message" => "Error al crear curso: " . $e->getMessage()]);
+        error_log('[Campus Courses] create error: ' . $e->getMessage());
+        echo json_encode(["success" => false, "message" => "Error al crear curso."]);
     }
 }
 
 function updateCourse($pdo) {
+    $auth = require_roles(['ADMIN', 'GESTOR', 'DOCENTE']);
     $id = $_GET['id'] ?? null;
     if (!$id) {
         http_response_code(400);
@@ -146,7 +155,19 @@ function updateCourse($pdo) {
     $data = json_decode(file_get_contents('php://input'), true);
     
     try {
-        if (!empty($data['is_featured'])) {
+        if ($auth['role'] === 'DOCENTE') {
+            $ownerStmt = $pdo->prepare("SELECT instructor_id FROM courses WHERE id = ?");
+            $ownerStmt->execute([$id]);
+            if ((string)$ownerStmt->fetchColumn() !== (string)$auth['sub']) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "message" => "No tienes permisos para editar este curso."]);
+                exit();
+            }
+        }
+
+        $isFeatured = !empty($data['is_featured']) ? 'true' : 'false';
+
+        if ($isFeatured === 'true') {
             $clearStmt = $pdo->prepare("UPDATE courses SET is_featured = FALSE WHERE id <> ?");
             $clearStmt->execute([$id]);
         }
@@ -160,16 +181,16 @@ function updateCourse($pdo) {
         ");
         
         $stmt->execute([
-            $data['title'],
-            $data['description'],
-            $data['cover_image'],
-            $data['poster_image'],
+            sanitize_plain_text($data['title'], 150),
+            sanitize_plain_text($data['description'], 5000),
+            trim($data['cover_image']),
+            trim($data['poster_image']),
             $data['price'],
-            $data['duration'],
+            sanitize_plain_text($data['duration'], 50),
             $data['level'],
-            $data['category'],
-            $data['instructor'],
-            $data['is_featured'],
+            sanitize_plain_text($data['category'], 50),
+            sanitize_plain_text($data['instructor'], 100),
+            $isFeatured,
             $id
         ]);
         
@@ -177,11 +198,13 @@ function updateCourse($pdo) {
         
     } catch (PDOException $e) {
         http_response_code(500);
-        echo json_encode(["success" => false, "message" => "Error al actualizar curso: " . $e->getMessage()]);
+        error_log('[Campus Courses] update error: ' . $e->getMessage());
+        echo json_encode(["success" => false, "message" => "Error al actualizar curso."]);
     }
 }
 
 function updateCourseModules($pdo) {
+    $auth = require_roles(['ADMIN', 'GESTOR', 'DOCENTE']);
     $id = $_GET['id'] ?? null;
     if (!$id) {
         http_response_code(400);
@@ -198,6 +221,16 @@ function updateCourseModules($pdo) {
     }
     
     try {
+        if ($auth['role'] === 'DOCENTE') {
+            $ownerStmt = $pdo->prepare("SELECT instructor_id FROM courses WHERE id = ?");
+            $ownerStmt->execute([$id]);
+            if ((string)$ownerStmt->fetchColumn() !== (string)$auth['sub']) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "message" => "No tienes permisos para editar este curso."]);
+                exit();
+            }
+        }
+
         $pdo->beginTransaction();
         
         // Eliminar módulos existentes (cascade eliminará lecciones y materiales)
@@ -210,7 +243,7 @@ function updateCourseModules($pdo) {
                 INSERT INTO modules (course_id, title, sort_order) 
                 VALUES (?, ?, ?) RETURNING id
             ");
-            $modStmt->execute([$id, $module['title'], $index]);
+            $modStmt->execute([$id, sanitize_plain_text($module['title'] ?? '', 150), $index]);
             $moduleId = $modStmt->fetchColumn();
             
             // Insertar lecciones
@@ -222,9 +255,9 @@ function updateCourseModules($pdo) {
                     ");
                     $lesStmt->execute([
                         $moduleId, 
-                        $lesson['title'], 
-                        $lesson['duration'] ?? '', 
-                        $lesson['youtubeId'] ?? '', 
+                        sanitize_plain_text($lesson['title'] ?? '', 150), 
+                        sanitize_plain_text($lesson['duration'] ?? '', 20), 
+                        sanitize_plain_text($lesson['youtubeId'] ?? $lesson['youtube_id'] ?? '', 50), 
                         $lessonIndex
                     ]);
                     $lessonId = $lesStmt->fetchColumn();
@@ -232,15 +265,16 @@ function updateCourseModules($pdo) {
                     // Insertar materiales si existen
                     if (isset($lesson['materials']) && is_array($lesson['materials'])) {
                         foreach ($lesson['materials'] as $material) {
+                            $cleanMaterial = sanitize_material_payload($material);
                             $matStmt = $pdo->prepare("
                                 INSERT INTO materials (lesson_id, title, type, url) 
                                 VALUES (?, ?, ?, ?)
                             ");
                             $matStmt->execute([
                                 $lessonId, 
-                                $material['title'], 
-                                $material['type'] ?? 'LINK', 
-                                $material['url']
+                                $cleanMaterial['title'], 
+                                $cleanMaterial['type'], 
+                                $cleanMaterial['url']
                             ]);
                         }
                     }
@@ -254,11 +288,13 @@ function updateCourseModules($pdo) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         http_response_code(500);
-        echo json_encode(["success" => false, "message" => "Error al actualizar módulos: " . $e->getMessage()]);
+        error_log('[Campus Courses] modules error: ' . $e->getMessage());
+        echo json_encode(["success" => false, "message" => "Error al actualizar modulos."]);
     }
 }
 
 function deleteCourse($pdo) {
+    require_roles(['ADMIN', 'GESTOR']);
     $id = $_GET['id'] ?? null;
     if (!$id) {
         http_response_code(400);
@@ -274,7 +310,8 @@ function deleteCourse($pdo) {
         
     } catch (PDOException $e) {
         http_response_code(500);
-        echo json_encode(["success" => false, "message" => "Error al eliminar curso: " . $e->getMessage()]);
+        error_log('[Campus Courses] delete error: ' . $e->getMessage());
+        echo json_encode(["success" => false, "message" => "Error al eliminar curso."]);
     }
 }
 ?>

@@ -1,9 +1,16 @@
 <?php
 require_once 'config.php';
+require_once 'auth.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    $auth = require_auth();
     if (isset($_GET['user_id'])) {
         $user_id = $_GET['user_id'];
+        if ((string)$auth['sub'] !== (string)$user_id && !in_array($auth['role'], ['ADMIN', 'GESTOR'], true)) {
+            http_response_code(403);
+            echo json_encode(["message" => "No tienes permisos para ver estas inscripciones."]);
+            exit();
+        }
         
         $stmt = $pdo->prepare("SELECT e.*, c.title as course_title, c.cover_image 
                                FROM enrollments e 
@@ -13,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $enrollments = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode($enrollments);
     } else {
+        require_roles(['ADMIN', 'GESTOR']);
         $stmt = $pdo->query("SELECT e.*, c.title as course_title, c.cover_image 
                              FROM enrollments e 
                              JOIN courses c ON e.course_id = c.id 
@@ -22,9 +30,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $auth = require_auth();
     $data = json_decode(file_get_contents("php://input"));
     
     if (isset($data->user_id) && isset($data->course_id)) {
+        if ((string)$auth['sub'] !== (string)$data->user_id && !in_array($auth['role'], ['ADMIN', 'GESTOR'], true)) {
+            http_response_code(403);
+            echo json_encode(["message" => "No tienes permisos para crear esta inscripcion."]);
+            exit();
+        }
         // Enforce uniqueness logic here or rely on unique constraint?
         // Let's rely on constraint and handle error gracefully.
         
@@ -39,8 +53,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 http_response_code(409);
                 echo json_encode(["message" => "Already enrolled."]);
             } else {
+                error_log('[Campus Enrollments] create error: ' . $e->getMessage());
                 http_response_code(500);
-                echo json_encode(["message" => "Enrollment failed: " . $e->getMessage()]);
+                echo json_encode(["message" => "No se pudo registrar la inscripcion."]);
             }
         }
     } else {
@@ -50,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+    require_roles(['ADMIN', 'GESTOR']);
     $data = json_decode(file_get_contents("php://input"));
     $id = $_GET['id'] ?? null;
     $status = $data->status ?? null;

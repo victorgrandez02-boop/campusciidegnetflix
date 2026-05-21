@@ -151,9 +151,10 @@ Acceder a: `http://localhost:3000/api/test_connection.php`
 
 | Email | Contraseña | Rol |
 |-------|------------|-----|
-| `admin@campus.com` | `123456` | ADMIN |
-| `alumno@campus.com` | `123456` | ALUMNO |
-| `profesor@campus.com` | `123456` | DOCENTE |
+| `admin@ciideg.edu.pe` | `@26Gemses1` | ADMIN |
+| `gestor@ciideg.edu.pe` | `@26Gemses1` | GESTOR |
+| `docente@ciideg.edu.pe` | `@26Gemses1` | DOCENTE |
+| `alumno@ciideg.edu.pe` | `@26Gemses1` | ALUMNO |
 
 **Nota:** La contraseña está hasheada con bcrypt. Para cambiar la contraseña, generar un nuevo hash.
 
@@ -175,15 +176,15 @@ Para crear nuevos usuarios con contraseña segura:
 ```php
 <?php
 // Generar hash para una contraseña
-$password = '123456';
+$password = '@26Gemses1';
 $hash = password_hash($password, PASSWORD_BCRYPT);
 echo $hash;
 ?>
 ```
 
-O usar este hash pre-generado para `123456`:
+O usar este hash pre-generado para `@26Gemses1`:
 ```
-$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi
+$2y$10$zB8y5xmFL.fhMy0spCuuq.7njnI99F3gJrVmgjrgFdn/ll/18mI2K
 ```
 
 ---
@@ -193,7 +194,7 @@ $2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi
 ### Obtener cursos de un docente
 ```sql
 SELECT * FROM courses 
-WHERE instructor_id = (SELECT id FROM users WHERE email = 'profesor@campus.com');
+WHERE instructor_id = (SELECT id FROM users WHERE email = 'docente@ciideg.edu.pe');
 ```
 
 ### Obtener alumnos inscritos a un curso
@@ -207,13 +208,13 @@ WHERE e.course_id = 1;
 ### Obtener progreso de un alumno
 ```sql
 SELECT * FROM v_student_progress 
-WHERE student_email = 'alumno@campus.com';
+WHERE student_email = 'alumno@ciideg.edu.pe';
 ```
 
 ### Obtener perfil de docente con estadísticas
 ```sql
 SELECT * FROM v_teacher_profiles 
-WHERE email = 'profesor@campus.com';
+WHERE email = 'docente@ciideg.edu.pe';
 ```
 
 ---

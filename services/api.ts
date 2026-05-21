@@ -1058,24 +1058,80 @@ export const api = {
     return publicUser(updatedUser);
   },
 
-  deleteUser: async (id: string): Promise<void> => {
+  /**
+   * Elimina un usuario del campus virtual.
+   * 
+   * Comportamiento híbrido:
+   * - Si remoteApiEnabled es true: Ejecuta una solicitud DELETE a la API remota (/api/users.php?id={id})
+   *   con el token de autorización correspondiente. Ante éxito, sincroniza el store local y el localStorage
+   *   como caché. Si falla, genera un warning en consola y mantiene intacto el almacenamiento local (fail-safe).
+   * - Si remoteApiEnabled es false (Modo Demo Offline): Realiza la eliminación y limpieza únicamente en
+   *   el store local / localStorage.
+   * 
+   * @param id Identificador único del usuario a eliminar.
+   * @returns Promesa con el resultado de éxito y un mensaje opcional de retroalimentación.
+   */
+  deleteUser: async (id: string): Promise<{ success: boolean; message?: string }> => {
+    if (remoteApiEnabled) {
+      try {
+        const response = await requestJson<{ success: boolean; message?: string }>(
+          `users.php?id=${encodeURIComponent(id)}`,
+          {
+            method: 'DELETE',
+          }
+        );
+
+        if (response && response.success) {
+          updateStore((draft) => {
+            draft.users = draft.users.filter((user) => user.id !== id);
+            draft.teacherProfiles = draft.teacherProfiles.filter((profile) => profile.userId !== id);
+            draft.enrollments = draft.enrollments.filter((enrollment) => enrollment.userId !== id);
+            draft.lessonProgress = draft.lessonProgress.filter((progress) => progress.userId !== id);
+            draft.notifications = draft.notifications.filter((notification) => notification.userId !== id);
+            draft.certificates = draft.certificates.filter((certificate) => certificate.userId !== id);
+          });
+
+          if (getSessionUserId() === id) {
+            setSessionUserId(null);
+          }
+
+          return { success: true, message: response.message || 'Usuario eliminado exitosamente.' };
+        } else {
+          const errMsg = response?.message || 'El backend no autorizó la eliminación.';
+          console.warn('[Campus Users] Delete error:', errMsg);
+          return { success: false, message: errMsg };
+        }
+      } catch (error: any) {
+        console.warn('[Campus Users] Delete error:', error);
+        return { success: false, message: error?.message || 'Error al conectar con el servidor.' };
+      }
+    }
+
+    // Fallback local / Modo Demo Offline
     await wait();
 
-    updateStore((draft) => {
-      if (id === 'user-admin') {
-        throw new Error('No es posible eliminar al administrador principal.');
+    try {
+      updateStore((draft) => {
+        if (id === 'user-admin') {
+          throw new Error('No es posible eliminar al administrador principal.');
+        }
+
+        draft.users = draft.users.filter((user) => user.id !== id);
+        draft.teacherProfiles = draft.teacherProfiles.filter((profile) => profile.userId !== id);
+        draft.enrollments = draft.enrollments.filter((enrollment) => enrollment.userId !== id);
+        draft.lessonProgress = draft.lessonProgress.filter((progress) => progress.userId !== id);
+        draft.notifications = draft.notifications.filter((notification) => notification.userId !== id);
+        draft.certificates = draft.certificates.filter((certificate) => certificate.userId !== id);
+      });
+
+      if (getSessionUserId() === id) {
+        setSessionUserId(null);
       }
 
-      draft.users = draft.users.filter((user) => user.id !== id);
-      draft.teacherProfiles = draft.teacherProfiles.filter((profile) => profile.userId !== id);
-      draft.enrollments = draft.enrollments.filter((enrollment) => enrollment.userId !== id);
-      draft.lessonProgress = draft.lessonProgress.filter((progress) => progress.userId !== id);
-      draft.notifications = draft.notifications.filter((notification) => notification.userId !== id);
-      draft.certificates = draft.certificates.filter((certificate) => certificate.userId !== id);
-    });
-
-    if (getSessionUserId() === id) {
-      setSessionUserId(null);
+      return { success: true };
+    } catch (error: any) {
+      console.warn('[Campus Users] Delete error:', error);
+      return { success: false, message: error?.message || 'Error al eliminar usuario localmente.' };
     }
   },
 
@@ -2102,19 +2158,74 @@ export const api = {
   },
 
   getSystemSettings: async (): Promise<SystemSettings> => {
-    await wait(30);
-    return clone(readStore().systemSettings ?? DEFAULT_SYSTEM_SETTINGS);
+    // Esta función NUNCA debe lanzar una excepción al caller.
+    // Toda falla se absorbe internamente y se retorna el último estado conocido
+    // o DEFAULT_SYSTEM_SETTINGS como garantía.
+    try {
+      if (remoteApiEnabled) {
+        try {
+          const response = await requestJson<{ success: boolean; data: SystemSettings }>(
+            'system_settings.php',
+          );
+          if (response && response.success && response.data && typeof response.data === 'object') {
+            const merged: SystemSettings = { ...DEFAULT_SYSTEM_SETTINGS, ...response.data };
+            updateStore((draft) => {
+              draft.systemSettings = merged;
+            });
+            return merged;
+          }
+          // El backend respondió pero sin datos útiles → usar store local
+          console.warn('[Campus Settings] Respuesta remota sin datos válidos, usando fallback local.');
+        } catch (remoteError) {
+          // Fallo de red, CORS, o body no JSON → no bloquear el boot
+          console.warn('[Campus Settings] Falló la carga remota, usando fallback local:', remoteError);
+        }
+      }
+
+      // Fallback: datos en store local (localStorage) o defaults hardcoded
+      const localSettings = readStore().systemSettings;
+      if (localSettings && typeof localSettings === 'object' && localSettings.primaryColor) {
+        return clone(localSettings);
+      }
+
+      return clone(DEFAULT_SYSTEM_SETTINGS);
+    } catch (fatalError) {
+      // Seguridad absoluta: si algo inesperado ocurre, retornar defaults
+      console.error('[Campus Settings] Error crítico inesperado al cargar settings:', fatalError);
+      return { ...DEFAULT_SYSTEM_SETTINGS };
+    }
   },
 
   updateSystemSettings: async (settings: Partial<SystemSettings>): Promise<SystemSettings> => {
+    if (remoteApiEnabled) {
+      try {
+        const response = await requestJson<{ success: boolean }>('system_settings.php', {
+          method: 'PUT',
+          body: JSON.stringify({ data: settings }),
+        });
+        
+        if (!response || !response.success) {
+          throw new Error('El backend no confirmó la actualización');
+        }
+        
+        let updated: SystemSettings = DEFAULT_SYSTEM_SETTINGS;
+        updateStore((draft) => {
+          draft.systemSettings = { ...draft.systemSettings, ...settings };
+          updated = draft.systemSettings;
+        });
+        return updated;
+      } catch (error) {
+        console.warn('[Campus Settings] Error al guardar configuraciones remotas. No se modificó el store local:', error);
+        throw error;
+      }
+    }
+
     await wait();
     let updated: SystemSettings = DEFAULT_SYSTEM_SETTINGS;
-
     updateStore((draft) => {
       draft.systemSettings = { ...draft.systemSettings, ...settings };
       updated = draft.systemSettings;
     });
-
     return updated;
   },
 

@@ -179,10 +179,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExit, onLogout }
   };
 
   const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.')) {
+      return;
+    }
     setSaving(true);
     try {
-      await api.deleteUser(userId);
-      await loadData();
+      const result = await api.deleteUser(userId);
+      if (result && !result.success) {
+        alert(result.message || 'Error al eliminar usuario.');
+      } else {
+        await loadData();
+      }
+    } catch (error: any) {
+      alert(error.message || 'Ocurrió un error inesperado al eliminar el usuario.');
     } finally {
       setSaving(false);
     }

@@ -211,16 +211,25 @@ function updateCourseModules($pdo) {
         echo json_encode(["success" => false, "message" => "ID de curso requerido"]);
         exit();
     }
-    
+
     $data = json_decode(file_get_contents('php://input'), true);
-    
+
     if (!isset($data['modules']) || !is_array($data['modules'])) {
         http_response_code(400);
-        echo json_encode(["success" => false, "message" => "Módulos requeridos"]);
+        echo json_encode(["success" => false, "message" => "Modulos requeridos"]);
         exit();
     }
-    
+
     try {
+        // Verificar que el curso existe antes de operar
+        $checkStmt = $pdo->prepare("SELECT id FROM courses WHERE id = ?");
+        $checkStmt->execute([$id]);
+        if (!$checkStmt->fetch()) {
+            http_response_code(404);
+            echo json_encode(["success" => false, "message" => "Curso no encontrado"]);
+            exit();
+        }
+
         if ($auth['role'] === 'DOCENTE') {
             $ownerStmt = $pdo->prepare("SELECT instructor_id FROM courses WHERE id = ?");
             $ownerStmt->execute([$id]);
@@ -232,48 +241,57 @@ function updateCourseModules($pdo) {
         }
 
         $pdo->beginTransaction();
-        
+
         // Eliminar módulos existentes (cascade eliminará lecciones y materiales)
         $delStmt = $pdo->prepare("DELETE FROM modules WHERE course_id = ?");
         $delStmt->execute([$id]);
-        
+
         // Insertar nuevos módulos
         foreach ($data['modules'] as $index => $module) {
+            if (empty(trim($module['title'] ?? ''))) continue; // Ignorar módulos sin título
+
             $modStmt = $pdo->prepare("
-                INSERT INTO modules (course_id, title, sort_order) 
+                INSERT INTO modules (course_id, title, sort_order)
                 VALUES (?, ?, ?) RETURNING id
             ");
             $modStmt->execute([$id, sanitize_plain_text($module['title'] ?? '', 150), $index]);
             $moduleId = $modStmt->fetchColumn();
-            
+
             // Insertar lecciones
             if (isset($module['lessons']) && is_array($module['lessons'])) {
                 foreach ($module['lessons'] as $lessonIndex => $lesson) {
+                    if (empty(trim($lesson['title'] ?? ''))) continue; // Ignorar lecciones sin título
+
+                    $youtubeId = sanitize_plain_text(
+                        $lesson['youtubeId'] ?? $lesson['youtube_id'] ?? '',
+                        50
+                    );
+
                     $lesStmt = $pdo->prepare("
-                        INSERT INTO lessons (module_id, title, duration, youtube_id, sort_order) 
+                        INSERT INTO lessons (module_id, title, duration, youtube_id, sort_order)
                         VALUES (?, ?, ?, ?, ?) RETURNING id
                     ");
                     $lesStmt->execute([
-                        $moduleId, 
-                        sanitize_plain_text($lesson['title'] ?? '', 150), 
-                        sanitize_plain_text($lesson['duration'] ?? '', 20), 
-                        sanitize_plain_text($lesson['youtubeId'] ?? $lesson['youtube_id'] ?? '', 50), 
+                        $moduleId,
+                        sanitize_plain_text($lesson['title'] ?? '', 150),
+                        sanitize_plain_text($lesson['duration'] ?? '0 min', 20),
+                        $youtubeId,
                         $lessonIndex
                     ]);
                     $lessonId = $lesStmt->fetchColumn();
-                    
+
                     // Insertar materiales si existen
                     if (isset($lesson['materials']) && is_array($lesson['materials'])) {
                         foreach ($lesson['materials'] as $material) {
                             $cleanMaterial = sanitize_material_payload($material);
                             $matStmt = $pdo->prepare("
-                                INSERT INTO materials (lesson_id, title, type, url) 
+                                INSERT INTO materials (lesson_id, title, type, url)
                                 VALUES (?, ?, ?, ?)
                             ");
                             $matStmt->execute([
-                                $lessonId, 
-                                $cleanMaterial['title'], 
-                                $cleanMaterial['type'], 
+                                $lessonId,
+                                $cleanMaterial['title'],
+                                $cleanMaterial['type'],
                                 $cleanMaterial['url']
                             ]);
                         }
@@ -281,15 +299,24 @@ function updateCourseModules($pdo) {
                 }
             }
         }
-        
+
         $pdo->commit();
-        echo json_encode(["success" => true, "message" => "Módulos actualizados exitosamente"]);
-        
+        echo json_encode(["success" => true, "message" => "Modulos actualizados exitosamente"]);
+
     } catch (PDOException $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         http_response_code(500);
         error_log('[Campus Courses] modules error: ' . $e->getMessage());
-        echo json_encode(["success" => false, "message" => "Error al actualizar modulos."]);
+
+        // En modo desarrollo se expone el detalle del error para facilitar el diagnóstico
+        $isDev = (getenv('APP_ENV') ?: 'production') !== 'production';
+        echo json_encode([
+            "success" => false,
+            "message" => "Error al actualizar modulos.",
+            "error"   => $isDev ? $e->getMessage() : null,
+        ]);
     }
 }
 

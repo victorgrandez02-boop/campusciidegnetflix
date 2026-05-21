@@ -260,7 +260,7 @@ docker-compose up --build -d
 - `GET /api/users.php` - Listar usuarios
 - `GET /api/users.php?id={id}` - Obtener usuario
 - `PUT /api/users.php?id={id}` - Actualizar usuario
-- `DELETE /api/users.php?id={id}` - Eliminar usuario
+- `DELETE /api/users.php?id={id}` - Eliminar usuario (requiere rol ADMIN/GESTOR; previene autoeliminación y borrado del administrador principal)
 
 ### Cursos
 - `GET /api/courses.php` - Listar cursos
@@ -272,11 +272,11 @@ docker-compose up --build -d
 ### Inscripciones
 - `GET /api/enrollments.php?user_id={id}` - Obtener inscripciones
 - `POST /api/enrollments.php` - Inscribir usuario
-- `PUT /api/enrollments.php` - Actualizar progreso
+- `PUT /api/enrollments.php` - Actualizar estado administrativo (por ejemplo, de PENDING a ACTIVE)
 
 ### Progreso
-- `GET /api/progress.php?user_id={uid}&lesson_id={lid}` - Obtener progreso
-- `POST /api/progress.php` - Actualizar progreso
+- `GET /api/progress.php?user_id={uid}&course_id={cid}` - Obtener progreso de lecciones por curso
+- `POST /api/progress.php` - Registrar/Actualizar progreso de lección (requiere `course_id` en el payload)
 
 ### Perfiles Docente
 - `GET /api/teacher_profiles.php?user_id={id}` - Obtener perfil
@@ -284,13 +284,26 @@ docker-compose up --build -d
 
 ---
 
-## 🔒 SEGURIDAD
+## 🔒 SEGURIDAD Y DESPLIEGUE EN PRODUCCIÓN
 
-- Contraseñas hasheadas con bcrypt
-- CORS configurado
-- Prepared statements (SQL injection prevention)
-- Validación de datos en frontend y backend
-- Headers de seguridad HTTP
+### Características de Seguridad
+- Contraseñas hasheadas en base de datos mediante bcrypt.
+- CORS configurado de forma estricta por origen.
+- Prepared statements para evitar inyecciones SQL.
+- Validación de payloads tanto en frontend como en backend.
+- Headers de seguridad HTTP.
+- Autenticación mediante JSON Web Tokens (JWT) firmados en servidor.
+
+### ⚠️ Directrices para Producción
+1. **Rotación del `APP_SECRET`**:
+   - El JWT se firma utilizando la variable de entorno `APP_SECRET`. Esta variable **debe** cambiarse en cada despliegue a producción por una cadena aleatoria y compleja de 64 caracteres.
+   - Si no se define, el backend emitirá una advertencia y usará una clave de respaldo, lo cual representa un riesgo de seguridad crítico.
+2. **Cambiar Contraseñas Seed**:
+   - Antes de abrir el campus al público, cambie las contraseñas por defecto de los usuarios cargados por el script SQL (`admin@ciideg.edu.pe`, `gestor@ciideg.edu.pe`, etc.) a través del panel de administración o directamente en la base de datos PostgreSQL.
+3. **Deshabilitar pgAdmin**:
+   - En entornos de producción abiertos, se recomienda comentar o remover por completo el servicio `pgadmin` del archivo `docker-compose.yml` para mitigar vectores de ataque sobre la base de datos.
+4. **Exposición de Puertos en Docker Host**:
+   - Asegúrese de que el `docker-compose.yml` de producción **no exponga** los puertos internos de la base de datos (5432) ni de pgAdmin al host público. El tráfico al backend debe canalizarse de forma segura a través del servidor web/proxy de frontend (Nginx) y la red interna bridge de Docker.
 
 ---
 

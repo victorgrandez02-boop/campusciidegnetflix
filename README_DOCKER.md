@@ -135,7 +135,7 @@ docker-compose logs -f frontend
 |----------|-----|--------------|
 | **Frontend** | http://localhost:3000 | Ver usuarios abajo |
 | **API** | http://localhost:8080/api/courses.php | - |
-| **pgAdmin** | http://localhost:5050 | `admin@campus.com` / `admin` |
+| **pgAdmin** | http://localhost:5050 | `admin@campus.ciideg.edu.pe` / config en `.env` |
 
 ---
 
@@ -143,9 +143,9 @@ docker-compose logs -f frontend
 
 | Email | Contraseña | Rol |
 |-------|------------|-----|
-| `admin@campus.com` | `123456` | ADMIN |
-| `profesor@campus.com` | `123456` | DOCENTE |
-| `alumno@campus.com` | `123456` | ALUMNO |
+| `admin@ciideg.edu.pe` | `@26Gemses1` | ADMIN |
+| `docente@ciideg.edu.pe` | `@26Gemses1` | DOCENTE |
+| `alumno@ciideg.edu.pe` | `@26Gemses1` | ALUMNO |
 
 ---
 
@@ -217,14 +217,14 @@ docker-compose exec postgres pg_isready
 ### Acceder desde pgAdmin
 
 1. Abrir http://localhost:5050
-2. Login: `admin@campus.com` / `admin`
+2. Login: `admin@campus.ciideg.edu.pe` / Contraseña configurada en `.env` (por defecto `admin` en desarrollo)
 3. Click en "Add New Server"
 4. Configuración:
    - **Host**: `postgres` (nombre del servicio en Docker)
    - **Port**: `5432`
    - **Database**: `campus_virtual`
-   - **Username**: `postgres`
-   - **Password**: `postgres`
+   - **Username**: `campus_user` (o el usuario configurado en `.env`)
+   - **Password**: Contraseña configurada en `.env`
 
 ### Consultas Útiles
 
@@ -484,11 +484,24 @@ server: {
 
 ### Producción
 
-Para producción, usar Docker Compose completo:
+Para despliegues en producción utilizando Docker Compose, siga las siguientes pautas de seguridad críticas:
 
-```bash
-docker-compose up -d --build
-```
+1. **Levantar el entorno completo**:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+2. **No exponer puertos innecesarios al Host**:
+   - En el archivo `docker-compose.yml` de producción, se recomienda remover la directiva `ports` del servicio `postgres` (puerto `5432`) y de `pgadmin` (puerto `5050`) para evitar que estos servicios queden expuestos directamente al tráfico exterior de internet. Todo el tráfico hacia PostgreSQL debe ser interno a la red de Docker.
+
+3. **Rotación obligatoria de `APP_SECRET`**:
+   - Genere una contraseña aleatoria de 64 caracteres en la variable `APP_SECRET` de su archivo `.env` en producción. Esto previene que tokens JWT puedan ser falsificados o descifrados por terceros.
+
+4. **Deshabilitar pgAdmin**:
+   - A menos que sea estrictamente necesario para labores de depuración temporal, comente o elimine el bloque de servicio `pgadmin` en el `docker-compose.yml` en producción.
+
+5. **Cambiar credenciales por defecto**:
+   - Modifique los valores seed de base de datos (`POSTGRES_USER` y `POSTGRES_PASSWORD`) en el archivo `.env` antes del primer despliegue.
 
 ---
 

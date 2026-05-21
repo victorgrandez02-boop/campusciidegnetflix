@@ -72,13 +72,29 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
   const loadCourses = async () => {
     try {
       setLoading(true);
+      // getCourses() devuelve la lista de cabeceras SIN módulos en modo remoto.
+      // Para editar módulos necesitamos el detalle completo de cada curso.
       const allCourses = await api.getCourses();
       const instructorCourses = allCourses.filter(
         (course) =>
           course.instructorId === currentUser.id ||
           (!course.instructorId && course.instructor === currentUser.fullName),
       );
-      setCourses(instructorCourses);
+
+      // Hidratar módulos: si un curso ya vino sin módulos (lista plana de la API)
+      // pedimos el detalle completo para que los módulos y lecciones estén disponibles.
+      const hydratedCourses = await Promise.all(
+        instructorCourses.map(async (course) => {
+          if (course.modules && course.modules.length > 0) return course;
+          try {
+            return await api.getCourse(course.id);
+          } catch {
+            return course; // Si falla, usar la versión sin módulos como fallback
+          }
+        }),
+      );
+
+      setCourses(hydratedCourses);
       if (isGestor) {
         const [usersData, supportData, enrollmentData] = await Promise.all([
           api.getUsers(),
@@ -278,34 +294,51 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
   };
 
   const handleSaveModule = async () => {
-    if (!editingModule || !moduleForm.title) return;
-    
+    if (!editingModule || !moduleForm.title.trim()) {
+      alert('El título del módulo es obligatorio.');
+      return;
+    }
+
+    const validLessons = moduleForm.lessons.filter(
+      (l) => l.title.trim() && l.youtubeId.trim(),
+    );
+    if (validLessons.length === 0) {
+      alert('Agrega al menos una lección con título y URL de YouTube.');
+      return;
+    }
+
     try {
       setLoading(true);
-      const course = courses.find(c => c.id === editingModule.courseId);
-      if (!course) return;
+
+      // Recargar el curso desde la BD ANTES de construir updatedModules
+      // para evitar que los módulos anteriores se pierdan por un estado obsoleto.
+      const freshCourse = await api.getCourse(editingModule.courseId);
+      if (!freshCourse) {
+        alert('No se encontró el curso. Por favor recarga la página.');
+        return;
+      }
 
       const newModule: Module = {
         id: Date.now().toString(),
-        title: moduleForm.title,
-        lessons: moduleForm.lessons.map((l, idx) => ({
+        title: moduleForm.title.trim(),
+        lessons: validLessons.map((l, idx) => ({
           id: `lesson-${Date.now()}-${idx}`,
-          title: l.title,
-          duration: l.duration,
-          youtubeId: l.youtubeId,
+          title: l.title.trim(),
+          duration: l.duration.trim() || '0 min',
+          youtubeId: l.youtubeId.trim(),
           isCompleted: false,
-          materials: []
-        }))
+          materials: [],
+        })),
       };
 
-      const updatedModules = [...course.modules, newModule];
-      await api.updateCourseModules(course.id, updatedModules);
+      const updatedModules = [...(freshCourse.modules || []), newModule];
+      await api.updateCourseModules(freshCourse.id, updatedModules);
       await loadCourses();
       setEditingModule(null);
       alert('Módulo agregado exitosamente');
     } catch (error) {
-      void error;
-      alert('Error al agregar módulo');
+      const message = error instanceof Error ? error.message : 'Error al agregar módulo';
+      alert(`Error al guardar el módulo: ${message}`);
     } finally {
       setLoading(false);
     }
@@ -341,8 +374,10 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
 
     try {
       setLoading(true);
-      const course = courses.find(c => c.id === editingLessonMaterials.courseId);
-      if (!course) return;
+
+      // Recargar el curso fresco antes de modificar para no perder módulos previos
+      const freshCourse = await api.getCourse(editingLessonMaterials.courseId);
+      if (!freshCourse) return;
 
       const materialUrl =
         materialForm.type === MaterialType.HTML && !looksLikeRemoteHtml(materialForm.url)
@@ -353,37 +388,38 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
         id: `material-${Date.now()}`,
         title: materialForm.title.trim(),
         type: materialForm.type,
-        url: materialUrl
+        url: materialUrl,
       };
 
-      const updatedModules = course.modules.map((mod, mIdx) => {
+      const updatedModules = freshCourse.modules.map((mod, mIdx) => {
         if (mIdx !== editingLessonMaterials.moduleIndex) return mod;
-        
+
         return {
           ...mod,
           lessons: mod.lessons.map((lesson, lIdx) => {
             if (lIdx !== editingLessonMaterials.lessonIndex) return lesson;
             return { ...lesson, materials: [...(lesson.materials || []), newMaterial] };
-          })
+          }),
         };
       });
 
-      await api.updateCourseModules(course.id, updatedModules);
+      await api.updateCourseModules(freshCourse.id, updatedModules);
       await loadCourses();
       setMaterialForm({ title: '', url: '', type: MaterialType.DRIVE });
-      
-      // Update the editing lesson with new materials
-      const updatedLesson = updatedModules[editingLessonMaterials.moduleIndex]
-        .lessons[editingLessonMaterials.lessonIndex];
-      setEditingLessonMaterials({ 
-        ...editingLessonMaterials, 
-        lesson: updatedLesson 
+
+      const updatedLesson =
+        updatedModules[editingLessonMaterials.moduleIndex].lessons[
+          editingLessonMaterials.lessonIndex
+        ];
+      setEditingLessonMaterials({
+        ...editingLessonMaterials,
+        lesson: updatedLesson,
       });
-      
+
       alert('Material agregado exitosamente');
     } catch (error) {
-      void error;
-      alert('Error al agregar material');
+      const message = error instanceof Error ? error.message : 'Error al agregar material';
+      alert(`Error al guardar el material: ${message}`);
     } finally {
       setLoading(false);
     }
@@ -394,38 +430,42 @@ const DocentePanel: React.FC<DocentePanelProps> = ({ currentUser, onBack, onLogo
 
     try {
       setLoading(true);
-      const course = courses.find(c => c.id === editingLessonMaterials.courseId);
-      if (!course) return;
 
-      const updatedModules = course.modules.map((mod, mIdx) => {
+      // Recargar el curso fresco antes de modificar
+      const freshCourse = await api.getCourse(editingLessonMaterials.courseId);
+      if (!freshCourse) return;
+
+      const updatedModules = freshCourse.modules.map((mod, mIdx) => {
         if (mIdx !== editingLessonMaterials.moduleIndex) return mod;
-        
+
         return {
           ...mod,
           lessons: mod.lessons.map((lesson, lIdx) => {
             if (lIdx !== editingLessonMaterials.lessonIndex) return lesson;
-            return { 
-              ...lesson, 
-              materials: lesson.materials?.filter(m => m.id !== materialId) || [] 
+            return {
+              ...lesson,
+              materials: lesson.materials?.filter((m) => m.id !== materialId) || [],
             };
-          })
+          }),
         };
       });
 
-      await api.updateCourseModules(course.id, updatedModules);
+      await api.updateCourseModules(freshCourse.id, updatedModules);
       await loadCourses();
-      
-      const updatedLesson = updatedModules[editingLessonMaterials.moduleIndex]
-        .lessons[editingLessonMaterials.lessonIndex];
-      setEditingLessonMaterials({ 
-        ...editingLessonMaterials, 
-        lesson: updatedLesson 
+
+      const updatedLesson =
+        updatedModules[editingLessonMaterials.moduleIndex].lessons[
+          editingLessonMaterials.lessonIndex
+        ];
+      setEditingLessonMaterials({
+        ...editingLessonMaterials,
+        lesson: updatedLesson,
       });
-      
+
       alert('Material eliminado exitosamente');
     } catch (error) {
-      void error;
-      alert('Error al eliminar material');
+      const message = error instanceof Error ? error.message : 'Error al eliminar material';
+      alert(`Error al eliminar el material: ${message}`);
     } finally {
       setLoading(false);
     }

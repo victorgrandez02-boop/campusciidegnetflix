@@ -1,0 +1,59 @@
+# ============================================
+# Docker Compose — Desarrollo Local Override
+# Campus Virtual CIIDEG
+# ============================================
+
+services:
+  # ============================================
+  # Base de Datos PostgreSQL
+  # Exponer puerto para conectarse localmente
+  # ============================================
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  # ============================================
+  # API PHP
+  # Exponer puerto y montar volumen para recarga en caliente
+  # ============================================
+  api:
+    ports:
+      - "${API_PORT:-8080}:80"
+    volumes:
+      - ./api:/var/www/html/api:ro
+
+  # ============================================
+  # Frontend React (Nginx)
+  # Exponer puerto para conectarse localmente
+  # ============================================
+  frontend:
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+
+  # ============================================
+  # pgAdmin (Solo para desarrollo)
+  # ============================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: campus_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@campus.ciideg.edu.pe}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - campus_network
+
+# ============================================
+# Declarar volumen extra para pgAdmin
+# ============================================
+volumes:
+  pgadmin_data:
+    driver: local

@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS payment_requests CASCADE;
 DROP TABLE IF EXISTS support_requests CASCADE;
 DROP TABLE IF EXISTS teacher_profiles CASCADE;
 DROP TABLE IF EXISTS courses CASCADE;
+DROP TABLE IF EXISTS system_settings CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 -- ============================================
@@ -48,6 +49,26 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER update_users_updated_at
     BEFORE UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- TABLA: system_settings (Configuración del sistema)
+-- ============================================
+CREATE TABLE system_settings (
+    id SERIAL PRIMARY KEY,
+    key_name VARCHAR(100) UNIQUE NOT NULL,
+    key_value TEXT,
+    data_type VARCHAR(20) CHECK (data_type IN ('string', 'number', 'boolean', 'json')),
+    description TEXT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_settings_key ON system_settings(key_name);
+
+CREATE TRIGGER update_system_settings_updated_at
+    BEFORE UPDATE ON system_settings
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -361,6 +382,23 @@ SELECT id,
        'https://twitter.com/docente_ciideg',
        'https://ciideg.edu.pe'
 FROM users WHERE email = 'docente@ciideg.edu.pe';
+
+-- Configuración inicial del sistema
+INSERT INTO system_settings (key_name, key_value, data_type, description) VALUES
+('primary_color', '#6366f1', 'string', 'Color primario de la interfaz'),
+('secondary_color', '#8b5cf6', 'string', 'Color secundario de la interfaz'),
+('logo_url', '/logo-ciideg.png', 'string', 'URL del logotipo del campus'),
+('platform_name', 'Campus Virtual CIIDEG', 'string', 'Nombre del campus virtual'),
+('payment_yape_number', '999-888-777', 'string', 'Número telefónico para pagos vía Yape'),
+('payment_cci_account', '000-000-000000', 'string', 'Cuenta bancaria o CCI para transferencias'),
+('payment_account_holder', 'CIIDEG', 'string', 'Nombre del titular de la cuenta bancaria'),
+('enable_payments', 'true', 'boolean', 'Habilitar o deshabilitar pasarela de pago y subida de comprobantes'),
+('support_email', 'soporte@ciideg.edu.pe', 'string', 'Correo de soporte del campus'),
+('max_upload_mb', '100', 'number', 'Límite máximo de subida de archivos en Megabytes')
+ON CONFLICT (key_name) DO UPDATE SET 
+    key_value = EXCLUDED.key_value,
+    data_type = EXCLUDED.data_type,
+    description = EXCLUDED.description;
 
 -- No se insertan cursos demo en produccion.
 -- El catalogo del alumno se alimenta solo con cursos creados por Docente/Gestor

@@ -153,6 +153,38 @@ if ($method === 'PUT') {
     exit();
 }
 
+if ($method === 'DELETE') {
+    $auth = require_roles(['ADMIN', 'GESTOR']);
+    $userId = $_GET['id'] ?? null;
+    if (!$userId) {
+        http_response_code(400);
+        echo json_encode(["message" => "ID de usuario requerido."]);
+        exit();
+    }
+
+    if ((string)$auth['sub'] === (string)$userId) {
+        http_response_code(400);
+        echo json_encode(["message" => "No puedes eliminar tu propia cuenta."]);
+        exit();
+    }
+
+    $stmtCheck = $pdo->prepare("SELECT email FROM users WHERE id = ?");
+    $stmtCheck->execute([$userId]);
+    $userToCheck = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+    if ($userToCheck && $userToCheck['email'] === 'admin@ciideg.edu.pe') {
+        http_response_code(400);
+        echo json_encode(["message" => "No es posible eliminar al administrador principal."]);
+        exit();
+    }
+
+    $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+
+    echo json_encode(["success" => true, "message" => "Usuario eliminado."]);
+    exit();
+}
+
 http_response_code(405);
 echo json_encode(["message" => "Metodo no permitido."]);
 ?>

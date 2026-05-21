@@ -126,13 +126,39 @@ const Player: React.FC<PlayerProps> = ({
 
       <div className="grid min-h-[calc(100vh-88px)] gap-0 md:grid-cols-[1.55fr_0.85fr]">
         <div className="flex flex-col border-r border-white/10 bg-[#0A1624]">
-          <div className="aspect-video w-full bg-black">
+          {/* ── Reproductor de Video con protección anti-fuga ──────────── */}
+          {/*
+           * ANTI-FUGA: Técnica de doble capa:
+           * 1. Parámetros de embed que reducen el branding y los enlaces:
+           *    - modestbranding=1 → oculta el logo de YouTube en el control bar
+           *    - rel=0           → al terminar, muestra solo videos del mismo canal
+           *    - disablekb=1     → deshabilita el teclado (previene shortcuts de fuga)
+           *    - iv_load_policy=3 → oculta las anotaciones/tarjetas con enlaces
+           *    - enablejsapi=1   → permite control programático futuro
+           * 2. Overlay CSS que cubre el área superior del video (donde vive el título
+           *    y el logo con enlace a YouTube) sin bloquear la barra de controles inferior.
+           */}
+          <div className="relative aspect-video w-full bg-black">
             <iframe
+              key={currentLesson.youtubeId}
               title={currentLesson.title}
-              src={`https://www.youtube.com/embed/${currentLesson.youtubeId}?rel=0&modestbranding=1`}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              src={`https://www.youtube-nocookie.com/embed/${currentLesson.youtubeId}?rel=0&modestbranding=1&disablekb=1&iv_load_policy=3&enablejsapi=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
               allowFullScreen
-              className="h-full w-full"
+              className="absolute inset-0 h-full w-full"
+            />
+            {/*
+             * Overlay superior transparente: cubre el ~12% superior del video,
+             * que es donde YouTube muestra el título/logo con enlace.
+             * pointer-events: all  → captura y cancela los clicks en esa zona.
+             * pointer-events del resto del video sigue siendo del iframe.
+             * z-index 10 asegura que quede por encima del iframe.
+             */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-auto absolute inset-x-0 top-0 z-10"
+              style={{ height: '12%' }}
+              onContextMenu={(e) => e.preventDefault()}
             />
           </div>
 

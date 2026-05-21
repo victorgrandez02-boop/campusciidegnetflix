@@ -109,6 +109,12 @@ function updateTeacherProfile($pdo) {
         exit();
     }
     
+    if ((string)$auth['sub'] !== (string)$userId && !in_array($auth['role'], ['ADMIN', 'GESTOR'], true)) {
+        http_response_code(403);
+        echo json_encode(["success" => false, "message" => "No tienes permisos para actualizar este perfil"]);
+        exit();
+    }
+    
     // Verificar que el usuario es docente
     $checkStmt = $pdo->prepare("SELECT id, role FROM users WHERE id = ?");
     $checkStmt->execute([$userId]);
@@ -199,9 +205,3 @@ function updateTeacherProfile($pdo) {
         echo json_encode(["success" => false, "message" => "Error al actualizar perfil."]);
     }
 }
-?>
-    if ((string)$auth['sub'] !== (string)$userId && !in_array($auth['role'], ['ADMIN', 'GESTOR'], true)) {
-        http_response_code(403);
-        echo json_encode(["success" => false, "message" => "No tienes permisos para actualizar este perfil"]);
-        exit();
-    }

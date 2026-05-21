@@ -230,20 +230,36 @@ const CampusApp: React.FC = () => {
     bootstrap();
   }, []);
 
+  // ── Branding CSS: primera pasada con defaults estáticos (síncrona, sin esperar API)
   useEffect(() => {
-    if (systemSettings) {
-      document.documentElement.style.setProperty(
-        "--primary-color",
-        systemSettings.primaryColor,
-      );
-      document.documentElement.style.setProperty(
-        "--secondary-color",
-        systemSettings.secondaryColor,
-      );
-      document.documentElement.style.setProperty(
-        "--accent-color",
-        systemSettings.accentColor,
-      );
+    const DEFAULTS = {
+      '--primary-color': '#003F6F',
+      '--secondary-color': '#075B98',
+      '--accent-color': '#38BDF8',
+    };
+    Object.entries(DEFAULTS).forEach(([prop, value]) => {
+      document.documentElement.style.setProperty(prop, value);
+    });
+  }, []);
+
+  // ── Branding CSS: segunda pasada con los valores reales de la API (asíncrona)
+  useEffect(() => {
+    if (!systemSettings) return;
+
+    const isValidColor = (v: unknown): v is string =>
+      typeof v === 'string' && v.trim().length > 0;
+
+    if (isValidColor(systemSettings.primaryColor)) {
+      document.documentElement.style.setProperty('--primary-color', systemSettings.primaryColor);
+    }
+    if (isValidColor(systemSettings.secondaryColor)) {
+      document.documentElement.style.setProperty('--secondary-color', systemSettings.secondaryColor);
+    }
+    if (isValidColor(systemSettings.accentColor)) {
+      document.documentElement.style.setProperty('--accent-color', systemSettings.accentColor);
+    }
+    if (typeof systemSettings.campusName === 'string' && systemSettings.campusName.trim()) {
+      document.title = systemSettings.campusName;
     }
   }, [systemSettings]);
 
@@ -615,8 +631,16 @@ const CampusApp: React.FC = () => {
 
   if (isBooting) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#101010] text-white">
-        Cargando campus profesional...
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-[#07121D] text-white">
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="h-12 w-12 animate-spin rounded-full border-4 border-white/10 border-t-sky-400"
+            aria-hidden="true"
+          />
+          <p className="text-sm tracking-widest text-gray-400 uppercase">
+            Cargando campus…
+          </p>
+        </div>
       </div>
     );
   }
